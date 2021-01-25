@@ -1,6 +1,6 @@
 # chatbot
 
-Dialogue engine for language education
+Memory augmented reinforce learning chatbot
 
 ## Installation
 
@@ -14,15 +14,6 @@ sudo apt install python3-dev python3-pip python3-venv
 
 2. Clone repository
 
-for SSH:
-
-```bash
-git clone git@github.com:2B3E/plato.git
-```
-
-otherwise:
-
-
 ```bash
 git clone https://github.com/2B3E/plato.git
 ```
@@ -32,7 +23,7 @@ git clone https://github.com/2B3E/plato.git
 3. Change directory
 
 ```bash
-cd plato
+cd chatbot
 ```
 
 
@@ -64,29 +55,13 @@ pip install -e .
 ## Usage
 
 ```python
-import plato
+import chatbot
 
+chatbot = chatbot.~~~()
 
-context = r"""
-I love food.
-I see a cake.
-I taste the cake.
-It tastes sweet.
-A cherry is on the cake.
-It looks yummy.
-I love food.
-I see cookies.
-Chocolate is on the cookies.
-It looks sweet.
-I taste the cookies.
-They taste great.
-"""
+utterance = "hi, my name is insub. who are you?"
 
-question = "What does the boy love?"
+response = chatbot(utterance=utterance)
 
-qa = plato.eng.QuestionAnswering()
-
-answer = qa(question=question, context=context)
-
-print(answer)
+print(response)
 ```
