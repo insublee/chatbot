@@ -1,5 +1,5 @@
 import chatbot.encoder
 import chatbot.decoder
-import chatbot.LTM
-import chatbot.WM
+import chatbot.long_term_memory
+import chatbot.working_memory
 import chatbot.selector
