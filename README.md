@@ -15,7 +15,7 @@ sudo apt install python3-dev python3-pip python3-venv
 2. Clone repository
 
 ```bash
-git clone https://github.com/2B3E/plato.git
+git clone https://github.com/insublee/chatbot.git
 ```
 
 
