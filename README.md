@@ -4,64 +4,34 @@ Memory augmented reinforce learning chatbot
 
 ## Installation
 
-1. Prerequisites
-
-```bash
-sudo apt update
-sudo apt install python3-dev python3-pip python3-venv
-```
-
-
-2. Clone repository
+1. Clone repository
 
 ```bash
 git clone https://github.com/insublee/chatbot.git
 ```
 
-
-
-3. Change directory
+2. Change directory
 
 ```bash
 cd chatbot
 ```
 
-
-4. Make a virtual environment (if needed)
-
-```bash
-python3 -m venv ./venv
-```
-
-5. Activate the virtual environment (if needed)
-
-```bash
-source ./venv/bin/activate
-```
-
-6. Dependencies
+3. install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-7. "Editable" install
-
-
-```bash
-pip install -e .
-```
 
 ## Usage
 
 ```python
-import chatbot
+from chatbot import chatbot
 
-chatbot = chatbot.~~~()
+chatbot = Chatbot()
 
 utterance = "hi, my name is insub. who are you?"
 
-response = chatbot(utterance=utterance)
+response = chatbot(utterance)
 
-print(response)
 ```
