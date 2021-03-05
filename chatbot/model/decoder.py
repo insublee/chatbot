@@ -1,19 +1,29 @@
 from typing import Tuple, Optional
 from torch import Tensor
-import torch.nn as nn
+import torch
 
-class CustomDecoder(nn.TransformerDecoder):
-    def __init__(self, d_model=512, nhead=8, dim_feedforward=2048, dropout=0.1, 
-                 activation="relu", num_decoder_layers=6, d_memory=2048):
-        
-        #decoder_layer = nn.TransformerDecoderLayer(d_model, nhead, dim_feedforward, dropout, activation)
-        decoder_layer = CustomDecoderLayer(d_model, nhead, dim_feedforward, dropout, activation, d_memory)
-        decoder_norm = nn.LayerNorm(d_model)
 
-        super(CustomDecoder, self).__init__(decoder_layer, num_decoder_layers, decoder_norm)
-        
+class CustomDecoder(torch.nn.Module):
+    def __init__(
+        self,
+        decoder,
+        WM_size, 
+        LongTermMemory_size, 
+        sentence_emb_dim, 
+        max_seq_length,
+        ):
+        super().__init__()
+        self.sentence_emb_dim = sentence_emb_dim
+        self.max_seq_length = max_seq_length
+        self.decoder = decoder
 
-class CustomDecoderLayer(nn.TransformerDecoderLayer):
-    def __init__(self, d_model, nhead, dim_feedforward, dropout, activation, d_memory):
-        super(CustomDecoderLayer, self).__init__(d_model, nhead, dim_feedforward, dropout, activation)
-        self.multihead_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout,kdim=d_memory, vdim=d_memory)
+    def forward(self, encoded_WM, retrieved_action, action_label):
+        # input : retrieved_action(batch, sentence_emb_dim)
+        #         encoded_WM(batch, WM_size, sentence_emb_dim)
+        # output: decoder_output(batch, max_seq_length, sentence_emb_dim)
+        concated_feature = torch.cat((encoded_WM, retrieved_action.unsqueeze(1)), 1) # (batch, W.M.length + 1, sentence_emb_dim)
+
+        decoder_output = self.decoder(input_ids = action_label['input_ids'],
+                                 attention_mask = action_label['attention_mask'],
+                                 encoder_hidden_states = concated_feature)
+        return decoder_output # (batch, max_seq_length, sentence_emb_dim)
