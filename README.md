@@ -2,6 +2,9 @@
 
 Memory augmented reinforce learning chatbot
 
+![LYNMP 로고](https://www.notion.so/insub/Presentation-229f5d9967d54b758fcfe42c9dfe7c80#c028ef50e5ec440b8a0ccf2b9ffec9cc "LYMNP 로고")
+
+
 ## Installation
 
 1. Clone repository
