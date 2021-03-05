@@ -43,7 +43,7 @@ import pytorch_lightning as pl
 from chatbot.data import DataModule
 from chatbot import Chatbot
 
-dm = DataModule("facebook/bart-base",use=0.004)
+dm = DataModule("facebook/bart-base")
 dm.prepare_data()
 dm.setup('fit')
 
