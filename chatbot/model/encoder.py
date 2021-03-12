@@ -4,7 +4,7 @@ from torch import Tensor
 import torch.nn as nn
 
 
-
+"""
 class CustomEncoder(torch.nn.Module):
     def __init__(
         self,
@@ -20,11 +20,11 @@ class CustomEncoder(torch.nn.Module):
         self.encoder = encoder
     
     def forward(self, x):
-        """
-        input_ids torch.Size([batch, dialogue, seq_len])
-        attention_mask torch.Size([batch, dialogue seq_len])
-        dialogue_mask torch.Size([batch, dialogue])
-        """
+        
+        #input_ids torch.Size([batch, dialogue, seq_len])
+        #attention_mask torch.Size([batch, dialogue seq_len])
+        #dialogue_mask torch.Size([batch, dialogue])
+        
         
         first_tokens_size=torch.Size((x['input_ids'].size(0), self.WM_size + 2, self.sentence_emb_dim))
         first_tokens = torch.empty(first_tokens_size)
@@ -46,3 +46,38 @@ class CustomEncoder(torch.nn.Module):
                 action_label = batch
         
         return first_tokens, action_label # (batch, dialogue, hidden), (batch, seq)
+"""
+
+class CustomEncoder(torch.nn.Module):
+    def __init__(
+        self,
+        encoder,
+        WM_size : int, 
+        LongTermMemory_size : int, 
+        sentence_emb_dim : int, 
+        max_seq_length : int,
+        ):
+        super().__init__()
+        self.WM_size = WM_size
+        self.sentence_emb_dim = sentence_emb_dim
+        self.encoder = encoder
+        for param in self.encoder.parameters():
+            param.requires_grad = False
+    
+    def forward(self, x):
+        """
+        encoder는 첫번째로 wm 7개와 action을 각각 벡터라이즈 하면 됨. reward를 뽑을때 쓰는 next_state는 아마 밖에서 처리할듯.
+        inputs : ['input_ids','attention_mask','segment_id'] or ['action_ids','action_attention_mask']
+        (action은 LTM에 저장할때와 디코더에 저장할때만 쓴다. 여기에는 안들어옴.)
+        
+        return 
+        """
+        # working memory를 통째로 인코딩 
+        encoder_out = self.encoder(**x)
+
+        # vectorize
+        if 'segment_id' in x.keys():
+            encoded_wm, encoded_state = vectorizer(encoder_out, x['segment_id'])
+            return encoded_wm, encoded_state
+        else:
+            return vectorizer(encoder_out)
