@@ -21,7 +21,7 @@ class Chatbot(pl.LightningModule):
         weight_decay: float = 0.0,
         max_epochs: int = 3,
         gpus: int = 4,
-        train_batch_size: int = 4,
+        train_batch_size: int = 32,
         accumulate_grad_batches=1,
         
         WM_size :int = 7,
@@ -40,10 +40,7 @@ class Chatbot(pl.LightningModule):
                                  LongTermMemory_size, 
                                  sentence_emb_dim, 
                                  max_seq_length)
-        self.sentiment_model = SentimentAstimater(WM_size, 
-                                                  LongTermMemory_size, 
-                                                  sentence_emb_dim, 
-                                                  max_seq_length)
+        
         # https://huggingface.co/facebook/bart-base/blob/main/config.json
         model = BartForConditionalGeneration.from_pretrained(model_name)
         encoder=model.get_encoder()
@@ -62,6 +59,11 @@ class Chatbot(pl.LightningModule):
                                      max_seq_length)
         self.lm_head = torch.nn.Linear(self.sentence_emb_dim, self.config.vocab_size, bias=False) 
         self.loss_function = torch.nn.CrossEntropyLoss()
+        tokenizer = BartTokenizer.from_pretrained(model_name)
+        self.sentiment_model = SentimentAstimater(self.config.vocab_size,
+                                                  self.sentence_emb_dim, 
+                                                  tokenizer.unk_token_id,
+                                                  self.config.pad_token_id)
 
         # encoder -> LTM -> selector -> decoder(batch, seq, hidden) -> lm_head(batch, seq, vocab_size) -> seq generate
         
@@ -69,7 +71,9 @@ class Chatbot(pl.LightningModule):
         # decoder_last_hidden_state : (batch, seq, hidden)
         # action_ids : (batch, seq)
         lm_out = self.lm_head(decoder_last_hidden_state)
-        return self.loss_function(lm_out.view(-1, self.config.vocab_size),action_ids.view(-1))
+        return self.loss_function(lm_out.view(-1, self.config.vocab_size),action_ids.reshape(action_ids.size(0) * action_ids.size(1)))
+        
+        
 
 
     def forward(self, x):
@@ -81,7 +85,7 @@ class Chatbot(pl.LightningModule):
         #      dialogue_mask(batch, max_dialogue_length)}
         
         # sentence encode
-        x, _ = self.encoder(batch) # (batch, max_dialogue_length, sentence_emb_dim)
+        x = self.encoder(x) # (batch, max_dialogue_length, sentence_emb_dim)
         batch_size = len(x)
         assert x.size()==torch.Size([batch_size, self.hparams.WM_size+2, self.sentence_emb_dim])
 
