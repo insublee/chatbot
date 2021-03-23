@@ -2,3 +2,4 @@ python==3.7.10
 transformers==4.3.3
 pytorch-lightning==1.2.1
 pytorch-pretrained-bert==0.6.2
+sacrebleu==1.5.1
