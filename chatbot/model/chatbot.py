@@ -1,6 +1,7 @@
 import torch
 from torch.nn import CrossEntropyLoss
 import torch.nn.functional as F
+from sacrebleu import corpus_bleu
 
 import pytorch_lightning as pl
 import datasets
@@ -16,13 +17,22 @@ from .sentiment import SentimentAstimater
 class ChatbotModel(BartForConditionalGeneration):
     def __init__(self, config, **kwarg):
         super().__init__(config)
-
+        
+        self.hparams = kwarg['hparams']
+        self.hparams.sentence_emb_dim = self.model.config.d_model
+        self.hparams.vocab_size = self.model.config.vocab_size
+        self.hparams.padding_index = self.model.config.pad_token_id
+        
         self.encoder = CustomEncoder(self.model.get_encoder())
         self.decoder = self.model.get_decoder()
         self.config = self.model.config
-        self.long_term_memory = LongTermMemory(kwarg.get('LongTermMemory_size'),self.config.hidden_size)
-        self.selector = Selector(kwarg.get('LongTermMemory_size'), self.config.hidden_size)
-        self.sentiment_model = SentimentAstimater()
+        #self.long_term_memory = LongTermMemory(kwarg.get('LongTermMemory_size'), self.config.hidden_size)
+        
+        self.long_term_memory = LongTermMemory(self.hparams)
+        #self.selector = Selector(kwarg.get('LongTermMemory_size'), self.config.hidden_size)
+        self.selector = Selector(self.hparams)
+        self.sentiment_model = SentimentAstimater(self.hparams)
+        self.sentiment_model.load_state_dict(torch.load('sentiment-analysis-en.pt'))
         
         #del self.model
     def get_encoder(self):
@@ -69,23 +79,6 @@ class ChatbotModel(BartForConditionalGeneration):
         
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        action_vector, reward = None, None
-        # 저장은 decoder_input_ids 있고 encoder_outputs는 없고, 레이블은 있을때 한다.
-        if decoder_input_ids is not None and encoder_outputs is None and labels is not None and kwarg.get('next_state_input_ids') is not None:
-            with torch.no_grad():
-                encoded_action = self.encoder(
-                    input_ids=decoder_input_ids,
-                    attention_mask=decoder_attention_mask,
-                    )
-                action_vector = self.encoder.vectorizing(encoded_action, decoder_attention_mask) # (batch,hidden)
-                
-                encoded_next_state = self.encoder(
-                    input_ids=kwarg['next_state_input_ids'],
-                    attention_mask=kwarg['next_state_attention_mask'],
-                    )
-                reward = self.sentiment_model(encoded_next_state[0])
-
-
         if labels is not None:
             if decoder_input_ids is None:
                 decoder_input_ids = self.shift_tokens_right(
@@ -105,35 +98,25 @@ class ChatbotModel(BartForConditionalGeneration):
         
         
         state_vector = self.encoder.vectorizing(encoder_outputs, attention_mask) # (batch,hidden)
-        retrieved_action = self.long_term_memory(state_vector) # (batch,hidden)
-        # 디코더가 말을 만들어낼 때는 (encoder_outputs + selected_action)를 보는것이 아니라
-        # (encoder_outputs + retrieved_action)로 만들어야함.
-        # 인코더 학습과정은 retrieved_action, 즉 저장된 정보에서 말을 만들어내야 하기 때문.
+        memory_logits = self.selector(state_vector) # (batch, LTM_size) 
         # selected_action에 대한 학습은 강화학습 로스쪽에서 계산.
-        
-        concated_hidden_states = torch.cat((encoder_outputs[0], retrieved_action.unsqueeze(1)), dim=1) # (batch,seq+1,hidden)
-        selected_mask = attention_mask[:,0].unsqueeze(1) # 메모리 덧붙인거 1로 해줘야하는데 디바이스 문제로 이렇게 해줌.
-        # selected_mask는 (batch, 1) 이고 1로만 있어야함       # selected_mask는 (batch, 1) 이고 1로만 있어야함
-        concated_state_mask = torch.cat((attention_mask,selected_mask),dim=1)
+        selected_action = self.long_term_memory.retrieve_from_logits(memory_logits).unsqueeze(1) # (batch, 1, hidden)
+        memory_mask = attention_mask[:,0].unsqueeze(1) # (batch, 1)
 
-        decoder_outputs = self.decoder(input_ids=decoder_input_ids, # 디코더 인풋아이디
-                           attention_mask=decoder_attention_mask, # 디코더 인풋아이디랑 같이들어갈 어텐션 마스크
-                           encoder_hidden_states=concated_hidden_states, # 벡터라이징 된 WM과 selected 된 action vector
-                           encoder_attention_mask=concated_state_mask, # 위어꺼 마스크 꼭줘야함
-                           head_mask=head_mask, # 멀티헤드 어텐션 모듈 마스큰데 이거 필요없음.
-                           encoder_head_mask=None, # 크로스어텐션 관련 마스큰데 이거도 필요없음
-                           past_key_values=past_key_values, # 디코딩할때 속도내려고 하는건데 필요없음
-                           inputs_embeds=inputs_embeds, # 인풋아이디 안주고 이거로 넘길수 있는데 필요없음
+        decoder_outputs = self.decoder(input_ids=decoder_input_ids,
+                           attention_mask=decoder_attention_mask,
+                           encoder_hidden_states=selected_action,
+                           encoder_attention_mask=memory_mask,
+                           head_mask=head_mask,
+                           encoder_head_mask=None,
+                           past_key_values=past_key_values,
+                           inputs_embeds=inputs_embeds,
                            use_cache=use_cache, 
-                           output_attentions=None, # 모든 레이어에 대한 어텐션인데, 필요없음
-                           output_hidden_states=None, # 전체적인 레이어 히든스테이트 값들인데, 필요없음
+                           output_attentions=None,
+                           output_hidden_states=None,
                            return_dict=return_dict)
         
         lm_logits = self.lm_head(decoder_outputs[0]) + self.final_logits_bias
-
-        if decoder_input_ids is not None and labels is not None and kwarg.get('next_state_input_ids') is not None:
-            self.long_term_memory.save_memory(state_vector, action_vector, reward)
-
         
         masked_lm_loss = None
         if labels is not None:
@@ -152,8 +135,8 @@ class ChatbotModel(BartForConditionalGeneration):
             decoder_attentions=decoder_outputs.attentions,
             cross_attentions=decoder_outputs.cross_attentions,
             encoder_last_hidden_state=encoder_outputs.last_hidden_state,
-            #encoder_hidden_states=encoder_outputs.hidden_states,
-            #encoder_attentions=encoder_outputs.attentions,
+            encoder_hidden_states=encoder_outputs.hidden_states,
+            encoder_attentions=encoder_outputs.attentions,
         )
     def shift_tokens_right(self,input_ids: torch.Tensor, pad_token_id: int, decoder_start_token_id: int):
         """
@@ -174,18 +157,20 @@ class Chatbot(pl.LightningModule):
         super().__init__()
         self.hparams = hparams
         self.save_hyperparameters()
-        kwarg = {"LongTermMemory_size":self.hparams.LongTermMemory_size}
         self.tokenizer = BartTokenizer.from_pretrained("facebook/bart-base")
-        self.model = ChatbotModel.from_pretrained("facebook/bart-base",**kwarg)
-        #self.f1_metric = datasets.load_metric("f1")
+        self.model = ChatbotModel.from_pretrained("facebook/bart-base",**{"hparams":self.hparams})
     
     def forward(self, **input):
         return self.model(**input)
     
     def training_step(self, batch, batch_idx):
-        LM_loss = self(**batch)[0]
-        policy_loss = self.policy_loss(**batch)
-        return LM_loss + policy_loss.mean()
+        state_lm_loss = self.language_model_loss(input_ids=batch['input_ids'], attention_mask=batch['attention_mask'])
+        action_lm_loss = self.language_model_loss(input_ids=batch['decoder_input_ids'], attention_mask=batch['decoder_attention_mask'])
+        policy_loss = self.policy_loss(**batch).mean()
+        self.log('LM_loss', state_lm_loss + action_lm_loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log('RL_loss', policy_loss, on_step=True, on_epoch=True, prog_bar=True)
+
+        return state_lm_loss + action_lm_loss + policy_loss
 
     def validation_step(self, batch, batch_idx):
         # . BLEU4 measures how many n-grams in a generated response overlap with those of the reference
@@ -193,13 +178,44 @@ class Chatbot(pl.LightningModule):
         # 이중에 val_loss는 인코더에만 인풋을 주고 디코더 아웃풋과 레이블을 비교한 loss
         model_output = self(input_ids=batch['input_ids'],
                             attention_mask=batch['attention_mask'],
+                            decoder_input_ids=batch['decoder_input_ids'],
+                            decoder_attention_mask=batch['decoder_attention_mask'],
                             labels=batch['labels'],
                             use_cache=False)
-        # 이건 제일 마지막에 
         # sys = self.model.generate(input_ids=batch['input_ids'])
-        # bleu = corpus_bleu(sys, refs)
-
-        return {'loss': model_output['loss']}
+        generated_ids = self.model.generate(
+            input_ids=batch["input_ids"],
+            attention_mask=batch["attention_mask"],
+            use_cache=True,
+            decoder_start_token_id = self.tokenizer.pad_token_id,
+            num_beams= self.hparams.eval_beams,
+            max_length = self.hparams.max_seq_length,
+            early_stopping = self.hparams.early_stopping,
+            )
+        sys = self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+        ref = self.tokenizer.batch_decode(batch['decoder_input_ids'], skip_special_tokens=True, clean_up_tokenization_spaces=True)
+        """
+        sys : [" hi, how are you doing? i'm getting ready to do some cheetah chasing to stay in shape.", 
+         ' i am! for my hobby i like to do canning or some whittling.',]
+        ref : [' you must be very fast. hunting is one of my favorite hobbies.', 
+         ' i also remodel homes when i am not out bow hunting.',]
+        """
+        bleu = corpus_bleu(sys, [ref])
+        return {'loss': model_output['loss'], 'bleu':bleu.score}
+    
+    def language_model_loss(self, input_ids=None, attention_mask=None, **kwarg):
+        loss_fct = CrossEntropyLoss()
+        encoder_output = self.model.encoder(input_ids=input_ids,attention_mask=attention_mask)
+        vector = self.model.encoder.vectorizing(encoder_output,attention_mask)
+        mask = attention_mask[:,0].unsqueeze(1)
+        decoder_outputs = self.model.decoder(input_ids=input_ids,
+                                             attention_mask=attention_mask,
+                                             encoder_hidden_states=vector,
+                                             encoder_attention_mask=mask,
+                                             )
+        state_lm_logits = self.model.lm_head(decoder_outputs[0]) + self.model.final_logits_bias
+        return loss_fct(state_lm_logits.view(-1, self.model.config.vocab_size), input_ids.view(-1))
+    
     
     def policy_loss(self,
                     input_ids=None,
@@ -212,13 +228,16 @@ class Chatbot(pl.LightningModule):
                     **kwarg):
 
         with torch.no_grad():
-            encoder_output = self.model.encoder(input_ids=decoder_input_ids,
+            action_encoder_output = self.model.encoder(input_ids=decoder_input_ids,
                                                 attention_mask=decoder_attention_mask)
-            a = self.model.encoder.vectorizing(encoder_output,
+            encoded_action = self.model.encoder.vectorizing(action_encoder_output,
                                                decoder_attention_mask) # vectors
-            a = self.model.long_term_memory.retrieve_index(a) # 실제로 한 행동에대한 인덱스
+            action_idx = self.model.long_term_memory.retrieve_index(encoded_action) # 실제로 한 행동에대한 인덱스
             
-            r = self.model.sentiment_model(encoder_output[0]) # 여기 원래 인풋은 next_state_input_ids. 지금은 그냥 넣자
+            r = self.model.sentiment_model(next_state_input_ids) #리워드 추측
+            # 저장
+            self.model.long_term_memory.save_memory(encoded_action, r)
+
         
         # Vanilla Actor-Critic 
         td_target = r + self.hparams.gamma * self.model.v(input_ids=next_state_input_ids,
@@ -226,9 +245,8 @@ class Chatbot(pl.LightningModule):
         delta = td_target - self.model.v(input_ids=input_ids,
                                          attention_mask=attention_mask)
 
-        pi = self.model.pi(input_ids=input_ids,
-                           attention_mask=attention_mask)
-        pi_a = pi.gather(1,a)
+        pi = self.model.pi(input_ids=input_ids,attention_mask=attention_mask)
+        pi_a = pi.gather(1,action_idx)
         pg = -torch.log(pi_a) * delta.detach()
         v_loss = F.smooth_l1_loss(self.model.v(input_ids=input_ids,attention_mask=attention_mask) , td_target.detach())
 

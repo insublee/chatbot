@@ -359,7 +359,7 @@ class DataModule(pl.LightningDataModule):
         return features
 
     def train_dataloader(self):
-        return DataLoader(self.dataset['train'], batch_size=self.hparams.train_batch_size)
+        return DataLoader(self.dataset['train'], batch_size=self.hparams.train_batch_size, num_workers=8)
 
     def val_dataloader(self):
-        return DataLoader(self.dataset['validation'], batch_size=self.hparams.eval_batch_size)
+        return DataLoader(self.dataset['validation'], batch_size=self.hparams.eval_batch_size, num_workers=8)
