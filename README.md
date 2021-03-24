@@ -30,12 +30,13 @@ pip install -r requirements.txt
 
 ```python
 from chatbot import chatbot
-
-chatbot = Chatbot()
+from args import args
+hparams = args()
+chatbot = Chatbot(hparams)
 
 utterance = "hi, my name is insub. who are you?"
 
-response = chatbot(utterance)
+response = chatbot.response(utterance)
 
 ```
 
