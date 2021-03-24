@@ -45,14 +45,16 @@ response = chatbot(utterance)
 import pytorch_lightning as pl
 from chatbot.data import DataModule
 from chatbot import Chatbot
+from args import args
 
-dm = DataModule("facebook/bart-base")
+hparams = args()
+
+dm = DataModule(hparams)
 dm.prepare_data()
 dm.setup('fit')
 
-chatbot  = Chatbot()
-
-trainer = pl.Trainer(max_epochs=2)
-trainer.fit(chatbot, dm.train_dataloader()) # 1epoch 8시간정도
+chatbot = Chatbot(hparams)
+trainer = pl.Trainer(gpus=1, max_epochs=1)
+trainer.fit(chatbot, dm)
 
 ```
