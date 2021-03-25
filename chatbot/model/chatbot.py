@@ -289,3 +289,25 @@ class Chatbot(pl.LightningModule):
             'frequency': 1
         }
         return [optimizer], [scheduler]
+    
+    def response(self, input_text:str=None):
+        if input_text != None:
+            tokenized_text = self.tokenizer([input_text], return_tensors="pt").input_ids
+            outputs = self.model.generate(input_ids=tokenized_text, 
+                                          #do_sample=True, 
+                                          num_beams=5, 
+                                          no_repeat_ngram_size=2,
+                                          max_length=40,
+                                          top_k=50, 
+                                          top_p=0.95,
+                                          early_stopping=True
+                                          )
+        else:
+            outputs = self.model.generate(max_length=40)
+        
+        return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        
+        
+        
+        
+        
