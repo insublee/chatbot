@@ -28,6 +28,7 @@ class SentimentAstimater(nn.Module):
         self.dropout = nn.Dropout(self.hparams.DROPOUT)
 
         self.fc = nn.Linear(len(self.hparams.FILTER_SIZES) * self.hparams.N_FILTERS, self.hparams.OUTPUT_DIM)
+        self.m = nn.Sigmoid()
 
     def forward(self, text):
         '''
@@ -42,4 +43,4 @@ class SentimentAstimater(nn.Module):
         conved_n = [F.relu(conv(embedded)).squeeze(3) for conv in self.convs]
         pooled_n = [F.max_pool1d(conv, conv.shape[2]).squeeze(2) for conv in conved_n]
         cat = self.dropout(torch.cat(pooled_n, dim = 1))
-        return self.fc(cat)
+        return F.sigmoid(self.fc(cat))
