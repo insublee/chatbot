@@ -13,7 +13,6 @@ from .ltm import LongTermMemory
 from .selector import Selector
 from .sentiment import SentimentAstimater
 
-
 class ChatbotModel(BartForConditionalGeneration):
     def __init__(self, config, **kwarg):
         super().__init__(config)
@@ -32,7 +31,7 @@ class ChatbotModel(BartForConditionalGeneration):
         #self.selector = Selector(kwarg.get('LongTermMemory_size'), self.config.hidden_size)
         self.selector = Selector(self.hparams)
         self.sentiment_model = SentimentAstimater(self.hparams)
-        self.sentiment_model.load_state_dict(torch.load('sentiment-analysis-en.pt'))
+        #self.sentiment_model.load_state_dict(torch.load('sentiment-analysis-en.pt'))
         
         #del self.model
     def get_encoder(self):
@@ -151,6 +150,8 @@ class ChatbotModel(BartForConditionalGeneration):
         shifted_input_ids.masked_fill_(shifted_input_ids == -100, pad_token_id)
 
         return shifted_input_ids
+    
+    
     
 class Chatbot(pl.LightningModule):
     def __init__(self, hparams):
